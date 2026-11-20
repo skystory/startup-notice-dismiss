@@ -110,9 +110,21 @@ sh notice.sh dismiss   # 지금 한 번 닫기를 보내고 HMG-API 응답을 �
 ./build.py ~/.hmgapi/author.key ../HMG-API
 ```
 
-`dist/`에 설치용 파일(`-hmgapi-usb.zip`, `-nemesis-usb.zip`), 서명된 모드(`.hmgapi.zip`),
-NEMESIS 패키지 스토어용 파일(`-nemesis-package.zip`)이 만들어집니다. 업데이트는 처음 설치한 모드와
-같은 키로 서명해야 합니다.
+`dist/` 바로 아래에는 **GitHub 릴리즈에 올리는 파일만** 만들어집니다.
+
+- `<id>-v<버전>-hmgapi-usb.zip`: HMG-API 앱으로 설치 (USB 최상위에 압축 해제)
+- `<id>-v<버전>-nemesis-usb.zip`: NEMESIS로 설치 (USB 최상위에 압축 해제)
+- `SHA256SUMS`: 위 두 파일의 체크섬
+
+릴리즈에 올리지 않는 중간 산출물은 `dist/extra/`에 따로 둡니다. 서명된 모드 본체(`.hmgapi.zip`,
+위 두 파일 안에 이미 들어 있음)와 NEMESIS 패키지 스토어 등록용 파일(`-nemesis-package.zip`)입니다.
+업데이트는 처음 설치한 모드와 같은 키로 서명해야 합니다.
+
+릴리즈 올리기 (PowerShell, `gh` 로그인 후):
+
+```powershell
+gh release create v<버전> --target main --notes-file dist/RELEASE_NOTES.md (Get-ChildItem dist/*.zip).FullName dist/SHA256SUMS
+```
 
 ## 테스트
 

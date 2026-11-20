@@ -3,11 +3,14 @@
 
     ./build.py keygen <key>   new author key: <key> (base64 PKCS#8) and <key>.pub (base64 X.509)
     ./build.py <key> <hmg-api checkout>
-                              writes dist/<id>-v<version>.hmgapi.zip and, for a flash drive,
-                              dist/<id>-v<version>-hmgapi-usb.zip (HMGAPI/updates/<id>-v<version>.zip inside)
-                              and dist/<id>-v<version>-nemesis-usb.zip, and for the NEMESIS Package
-                              Store dist/<id>-v<version>-nemesis-package.zip (both made by the
-                              checkout's tools/mknemesismod.sh, needs unzip and zip)
+                              릴리즈 파일 (GitHub 릴리즈에 올리는 것, dist/ 바로 아래):
+                                dist/<id>-v<version>-hmgapi-usb.zip  (HMGAPI/updates/<id>-v<version>.zip inside)
+                                dist/<id>-v<version>-nemesis-usb.zip (NEMESIS.data + packages/ inside)
+                                dist/SHA256SUMS                      (위 두 파일만의 체크섬)
+                              중간 산출물 (릴리즈에 올리지 않음, dist/extra/):
+                                dist/extra/<id>-v<version>.hmgapi.zip          서명된 모드 본체 (위 두 파일 안에 들어감)
+                                dist/extra/<id>-v<version>-nemesis-package.zip NEMESIS 패키지 스토어 등록용
+                              NEMESIS 파일은 checkout의 tools/mknemesismod.sh가 만듦 (unzip, zip 필요)
 
 Same files and manifest as `hmgapi.engine.Signing sign`: SHA256withECDSA over
 META-HMGAPI/manifest.json, the uuid derived from the public key, so keys made by
@@ -18,6 +21,8 @@ import base64, hashlib, json, os, shutil, subprocess, sys, tempfile, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 MOD = os.path.join(HERE, "mod")
 DIST = os.path.join(HERE, "dist")
+# 릴리즈에 올리지 않는 중간 산출물 (서명된 모드 본체, 패키지 스토어용 파일)
+EXTRA = os.path.join(DIST, "extra")
 META = "META-HMGAPI"
 # what NEMESIS's store shows as compatible: only what the mod was tested on. A glob of
 # ro.build.product, and the unit's /system/onebin folder name. mod.json has no "system",
@@ -97,7 +102,7 @@ def nemesis_usb(signed, mod, hmgapi):
     with tempfile.TemporaryDirectory() as t:
         subprocess.run(["sh", tool, os.path.abspath(signed), t], check=True, capture_output=True)
         out = os.path.join(DIST, f"{mod['id']}-v{mod['version']}-nemesis-usb.zip")
-        store = os.path.join(DIST, f"{mod['id']}-v{mod['version']}-nemesis-package.zip")
+        store = os.path.join(EXTRA, f"{mod['id']}-v{mod['version']}-nemesis-package.zip")
         shutil.move(os.path.join(t, f"{mod['id']}-{mod['version']}-nemesis.zip"), out)
         shutil.move(os.path.join(t, f"{mod['id']}-{mod['version']}-nemesis-package.zip"), store)
     swap_in_zip(store, "NEMESIS.data", tested_on)
@@ -131,8 +136,8 @@ def build(key, hmgapi):
         open(sigf, "wb").write(sig)
         openssl("dgst", "-sha256", "-verify", ppem, "-signature", sigf, data=manifest)
 
-    os.makedirs(DIST, exist_ok=True)
-    out = os.path.join(DIST, f"{mod['id']}-v{mod['version']}.hmgapi.zip")
+    os.makedirs(EXTRA, exist_ok=True)
+    out = os.path.join(EXTRA, f"{mod['id']}-v{mod['version']}.hmgapi.zip")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(f"{META}/manifest.json", manifest)
         z.writestr(f"{META}/signature", base64.b64encode(sig).decode() + "\n")
@@ -144,10 +149,22 @@ def build(key, hmgapi):
     usb = os.path.join(DIST, f"{mod['id']}-v{mod['version']}-hmgapi-usb.zip")
     with zipfile.ZipFile(usb, "w", zipfile.ZIP_STORED) as z:
         z.write(out, f"HMGAPI/updates/{mod['id']}-v{mod['version']}.zip")
+    nemesis_out, store = nemesis_usb(out, mod, hmgapi)
+    release_files = [usb, nemesis_out]
+    write_checksums(release_files)
     print(f"signed {mod['id']} {mod['version']}: {len(files)} files, uuid {uuid_of(pub)}")
-    print(out)
-    print(usb)
-    print(*nemesis_usb(out, mod, hmgapi), sep="\n")
+    print("릴리즈 파일:", *release_files, os.path.join(DIST, "SHA256SUMS"), sep="\n  ")
+    print("중간 산출물 (릴리즈에 올리지 않음):", out, store, sep="\n  ")
+
+
+def write_checksums(release_files):
+    """dist/SHA256SUMS: 릴리즈에 올리는 파일만 (sha256sum -c 형식)."""
+    lines = []
+    for path in sorted(release_files):
+        with open(path, "rb") as f:
+            lines.append(f"{hashlib.sha256(f.read()).hexdigest()}  {os.path.basename(path)}\n")
+    with open(os.path.join(DIST, "SHA256SUMS"), "w") as f:
+        f.writelines(lines)
 
 
 if __name__ == "__main__":
