@@ -1,7 +1,7 @@
 {
   "id": "startup-notice-dismiss",
   "name": "시작 안내 자동 닫기 (Startup Notice Dismiss)",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "hmgapi": ">=1.0.0",
   "authors": ["Skystory"],
   "license": "AGPL-3.0",

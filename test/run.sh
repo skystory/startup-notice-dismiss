@@ -86,11 +86,11 @@ logged() { grep -q -- "$1" "$T/log"; }
 
 # --- 부팅
 run '{}' 30 60
-result "부팅: 한 번 닫음" $([ "$(sent_count)" = 1 ] && logged "시작 안내를 닫음" && echo 0 || echo 1) "1회 전송, 닫음 로그"
-result "부팅: 기본 2초 뒤" $([ "$(first_sent_uptime)" = 32 ] && echo 0 || echo 1) "uptime 32에 전송"
+result "부팅: 한 번 닫음" $([ "$(sent_count)" = 1 ] && logged "시작 안내 닫기를 보냄" && echo 0 || echo 1) "1회 전송, 닫음 로그"
+result "부팅: 기본 5초 뒤" $([ "$(first_sent_uptime)" = 35 ] && echo 0 || echo 1) "uptime 35에 전송"
 
 run '{}' 30 100 'echo 0 > $T/boot_completed' 'echo "45 echo 1 > $T/boot_completed" > $T/events'
-result "부팅: sys.boot_completed 기다림" $([ "$(sent_count)" = 1 ] && [ "$(first_sent_uptime)" -ge 47 ] && echo 0 || echo 1) "45초에 부팅 완료 + 2초"
+result "부팅: sys.boot_completed 기다림" $([ "$(sent_count)" = 1 ] && [ "$(first_sent_uptime)" -ge 50 ] && echo 0 || echo 1) "45초에 부팅 완료 + 5초"
 
 run '{}' 30 200 'echo 0 > $T/boot_completed'
 result "부팅: boot_completed가 끝내 안 와도 진행" $([ "$(sent_count)" = 1 ] && [ "$(first_sent_uptime)" -ge 150 ] && logged "확인되지 않아" && echo 0 || echo 1) "120초 대기 후 전송"
@@ -102,7 +102,7 @@ run '{"boot_delay":99}' 30 60
 result "부팅: 지연은 최대 10초" $([ "$(first_sent_uptime)" = 40 ] && echo 0 || echo 1) "uptime 40에 전송"
 
 run '{"boot_delay":"abc"}' 30 60
-result "부팅: 잘못된 지연값은 기본값" $([ "$(first_sent_uptime)" = 32 ] && echo 0 || echo 1) "uptime 32에 전송"
+result "부팅: 잘못된 지연값은 기본값" $([ "$(first_sent_uptime)" = 35 ] && echo 0 || echo 1) "uptime 35에 전송"
 
 run '{}' 500 530
 result "늦게 시작된 서비스(재시작·설치): 닫지 않음" $([ "$(sent_count)" = 0 ] && logged "닫지 않음" && echo 0 || echo 1) "전송 없음"
@@ -115,7 +115,7 @@ run '{}' 30 80 'echo "$NOT_ALLOWED" > $T/default_answer'
 result "허용 스위치 꺼짐: 1번만 보내고 안내" $([ "$(sent_count)" = 1 ] && logged "Startup notice" && echo 0 || echo 1) "1회, 안내 로그"
 
 run '{}' 30 80 'printf "%s\n%s\n" "$ASKING" "$ASKING" > $T/answers'
-result "허용 질문이 떠 있음: 다시 시도 후 닫음" $([ "$(sent_count)" = 3 ] && logged "시작 안내를 닫음" && echo 0 || echo 1) "3회"
+result "허용 질문이 떠 있음: 다시 시도 후 닫음" $([ "$(sent_count)" = 3 ] && logged "시작 안내 닫기를 보냄" && echo 0 || echo 1) "3회"
 
 run '{}' 30 80 'printf "%s\n%s\n%s\n" "$NOT_PARK" "$NOT_PARK" "$NOT_PARK" > $T/answers'
 result "아직 P 아님: 다시 시도 후 닫음" $([ "$(sent_count)" = 4 ] && [ "$(grep -c "P가 아니라고" $T/log)" = 1 ] && echo 0 || echo 1) "4회, 같은 응답은 로그 1번"
@@ -135,7 +135,7 @@ result "빈 응답: 다시 시도 후 닫음" $([ "$(sent_count)" = 2 ] && echo 
 # --- 슬립에서 깨어남
 run '{}' 30 700 'echo "60 jump 600" > $T/events'
 result "깨어남: 다시 닫음" $([ "$(sent_count)" = 2 ] && logged "깨어남" && echo 0 || echo 1) "2회"
-result "깨어남: 기본 1초 뒤" $([ "$(nth_sent_uptime 2)" -ge 661 ] && [ "$(nth_sent_uptime 2)" -le 663 ] && echo 0 || echo 1) "661~663에 전송 (got $(nth_sent_uptime 2))"
+result "깨어남: 기본 2초 뒤" $([ "$(nth_sent_uptime 2)" -ge 662 ] && [ "$(nth_sent_uptime 2)" -le 664 ] && echo 0 || echo 1) "662~664에 전송 (got $(nth_sent_uptime 2))"
 
 run '{"wake_delay":4}' 30 700 'echo "60 jump 600" > $T/events'
 result "깨어남: wake_delay 설정" $([ "$(nth_sent_uptime 2)" -ge 664 ] && [ "$(nth_sent_uptime 2)" -le 666 ] && echo 0 || echo 1) "664~666에 전송 (got $(nth_sent_uptime 2))"
@@ -151,8 +151,8 @@ result "깨어남: P가 아니면 40번에서 멈춤" $([ "$(sent_count)" = 100 
 
 # --- 슬립 없이 다시 시동 (hv.ready 0 → 1)
 run '{}' 30 200 'printf "%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "130 echo 1 > $T/r/hv.ready" > $T/events'
-result "시동(READY): 슬립 없이 다시 시동하면 닫음" $([ "$(sent_count)" = 2 ] && logged "시동(READY): 시작 안내를 닫음" && echo 0 || echo 1) "부팅 1 + 시동 1 = 2회"
-result "시동(READY): 3초 확인 + 1초 대기 안에 보냄" $([ "$(nth_sent_uptime 2)" -ge 131 ] && [ "$(nth_sent_uptime 2)" -le 135 ] && echo 0 || echo 1) "131~135에 전송 (got $(nth_sent_uptime 2))"
+result "시동(READY): 슬립 없이 다시 시동하면 닫음" $([ "$(sent_count)" = 2 ] && logged "시동(READY): 시작 안내 닫기를 보냄" && echo 0 || echo 1) "부팅 1 + 시동 1 = 2회"
+result "시동(READY): 3초 확인 + 2초 대기 안에 보냄" $([ "$(nth_sent_uptime 2)" -ge 132 ] && [ "$(nth_sent_uptime 2)" -le 136 ] && echo 0 || echo 1) "132~136에 전송 (got $(nth_sent_uptime 2))"
 
 run '{}' 30 200
 result "시동(READY): 계속 READY면 부팅 때만" $([ "$(sent_count)" = 1 ] && echo 0 || echo 1) "1회"
@@ -164,7 +164,7 @@ run '{"ready_trigger":false}' 30 200 'printf "%s\n%s\n" "100 echo 0 > $T/r/hv.re
 result "시동(READY): 설정에서 끄면 안 보냄" $([ "$(sent_count)" = 1 ] && logged "설정이 꺼져 있어" && echo 0 || echo 1) "1회"
 
 run '{}' 30 200 'echo 0 > $T/r/hv.ready' 'echo "$ONCE" > $T/default_answer' 'echo "$OK_ANSWER" > $T/answers' 'echo "100 echo 1 > $T/r/hv.ready" > $T/events'
-result "시동(READY): ACC로 부팅 뒤 READY는 once per start로 끝" $([ "$(sent_count)" = 2 ] && logged "이미 닫았다고" && echo 0 || echo 1) "2회"
+result "시동(READY): ACC로 부팅 뒤 READY는 once per start로 끝" $([ "$(sent_count)" = 2 ] && logged "이미 보냈다며" && echo 0 || echo 1) "2회"
 
 run '{}' 30 300 'printf "%s\n%s\n%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "130 echo 1 > $T/r/hv.ready" "160 echo 0 > $T/r/hv.ready" "190 echo 1 > $T/r/hv.ready" > $T/events'
 result "시동(READY): 시동마다 한 번씩" $([ "$(sent_count)" = 3 ] && echo 0 || echo 1) "부팅 1 + 시동 2 = 3회"
@@ -174,7 +174,7 @@ result "깨어남과 READY가 겹치면 깨어남으로 한 번만" $([ "$(sent_
 
 # --- HMG-API 차량 서비스가 늦게 뜸
 run '{}' 30 300 'for i in $(seq 70); do echo "the vehicle service isn'"'"'t running (yet)"; done > $T/answers'
-result "차량 서비스가 70초 늦게 떠도 닫음 (시도 횟수와 별도)" $([ "$(sent_count)" = 71 ] && logged "시작 안내를 닫음" && [ "$(grep -c "아직 시작되지 않음" $T/log)" = 1 ] && echo 0 || echo 1) "71회 (got $(sent_count))"
+result "차량 서비스가 70초 늦게 떠도 닫음 (시도 횟수와 별도)" $([ "$(sent_count)" = 71 ] && logged "시작 안내 닫기를 보냄" && [ "$(grep -c "아직 시작되지 않음" $T/log)" = 1 ] && echo 0 || echo 1) "71회 (got $(sent_count))"
 
 run '{}' 30 400 'echo "the vehicle service isn'"'"'t running (yet)" > $T/default_answer'
 result "차량 서비스가 끝내 안 뜨면 3분 뒤 포기" $([ "$(sent_count)" = 181 ] && logged "180초 동안 시작되지 않아" && echo 0 || echo 1) "181회 (got $(sent_count))"
@@ -182,6 +182,16 @@ result "차량 서비스가 끝내 안 뜨면 3분 뒤 포기" $([ "$(sent_count
 # --- uptime을 읽지 못함
 run '{}' 30 60 ': > $UP'
 result "uptime을 못 읽으면 부팅 닫기 안 함, 멈추지 않음" $([ "$(sent_count)" = 0 ] && logged "읽지 못해" && ! grep -qi "syntax\|error\|오류" $T/log && echo 0 || echo 1) "전송 없음, 오류 없음"
+
+# --- HMG-API가 닫기 호출에 실패 (1.0.x는 이후 once per start로 막힘)
+run '{}' 30 120 'printf "%s\n" "refused: the car'"'"'s service failed (java.lang.IllegalStateException: Cannot broadcast before boot completed)" > $T/answers' 'echo "$ONCE" > $T/default_answer'
+result "닫기 호출 실패: 다시 보내지 않고 이유를 남김" $([ "$(sent_count)" = 1 ] && logged "호출에 실패함" && echo 0 || echo 1) "1회"
+
+# --- P단이 아니라는 응답: 차량의 gear.park 값을 로그에 남김
+run '{}' 30 80 'printf "%s\n" "$NOT_PARK" > $T/answers' 'echo 0 > $T/r/gear.park'
+result "P 아님: gear.park 값을 로그에 남김" $(logged "gear.park=0" && echo 0 || echo 1) "gear.park=0 로그"
+run '{}' 30 200 'echo "$NOT_PARK" > $T/default_answer'
+result "끝내 P 아님: P단 값을 못 읽는 경우 안내" $(logged "P단 값을 읽지 못하는 것 (gear.park=1)" && echo 0 || echo 1) "안내 로그"
 
 # --- check / dismiss 명령
 run '{"boot_delay":3}' 30 31

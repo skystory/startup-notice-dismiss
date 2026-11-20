@@ -28,8 +28,10 @@ GETPROP=${GETPROP:-getprop}
 
 # 설정을 한 번도 저장하지 않았을 때 쓰는 기본값 (settings.json의 default와 맞춰 둘 것)
 DEFAULT_ENABLED=true
-DEFAULT_BOOT_DELAY_SECONDS=2
-DEFAULT_WAKE_DELAY_SECONDS=1
+# 안내 화면이 실제로 뜬 뒤에 닫아야 함. 너무 일찍 보내면 HMG-API는 ok라고 답하지만 화면은 그 뒤에 뜨고,
+# HMG-API 1.0.x는 한 시동에 한 번만 보내므로 다시 닫을 수 없음 (Factory82도 부팅 후 10초 이상 기다려 성공)
+DEFAULT_BOOT_DELAY_SECONDS=5
+DEFAULT_WAKE_DELAY_SECONDS=2
 DEFAULT_READY_TRIGGER=true
 MAX_DELAY_SECONDS=10
 
@@ -110,6 +112,11 @@ seen() {      # seen <이름>: SNAP에 있는 값, 없으면 -
 
 send_dismiss() { hmgapid vehicle-do startup_notice dismiss 2>&1; }
 
+gear_park_reading() {  # 진단용: 차량이 알려주는 P단 값 (1 = P, 0 = P 아님, - = 읽지 못함)
+    snapshot gear.park
+    seen gear.park
+}
+
 dismiss_with_retry() {  # dismiss_with_retry <계기> <최대 시도 횟수>: 닫히거나 더 할 수 없을 때까지 재시도
     local trigger=$1 max_attempts=$2 attempt=1 service_waited=0 answer last_answer=
     while [ $attempt -le $max_attempts ]; do
@@ -128,11 +135,17 @@ dismiss_with_retry() {  # dismiss_with_retry <계기> <최대 시도 횟수>: �
         esac
         case "$answer" in
         ok*)
-            log "$trigger: 시작 안내를 닫음 (${attempt}번째 시도)"
+            log "$trigger: 시작 안내 닫기를 보냄, HMG-API 응답: $answer (${attempt}번째 시도, 부팅 후 $(uptime_s)초)"
             return 0 ;;
         *"once per start"*)
-            log "$trigger: HMG-API가 이번 시동에서 이미 닫았다고 답함 (HMG-API 1.0.x는 QuickBoot 뒤 다음 주행에도 이렇게 답할 수 있음)"
+            log "$trigger: HMG-API가 이번 시동에는 이미 보냈다며 거절함 ($answer)"
+            log "$trigger: (HMG-API 1.0.x는 재부팅 전까지 두 번째 주행부터, 그리고 닫기 호출이 한 번 실패한 뒤에도 이렇게 답함)"
             return 0 ;;
+        *"service failed"*)
+            # HMG-API 1.0.x는 호출 전에 '이번 시동 완료'로 표시하므로, 실패해도 이번 시동에는 다시 보낼 수 없음
+            log "$trigger: HMG-API가 차량의 닫기 기능 호출에 실패함: $answer"
+            log "$trigger: 이번 시동에는 다시 보낼 수 없음 (다음 시동에서 다시 시도)"
+            return 1 ;;
         *"hasn't allowed"*)
             log "$trigger: HMG-API 앱 설정에서 'Startup notice' 허용이 꺼져 있음. 켜야 동작합니다"
             return 1 ;;
@@ -147,7 +160,7 @@ dismiss_with_retry() {  # dismiss_with_retry <계기> <최대 시도 횟수>: �
         if [ "$answer" != "$last_answer" ]; then
             case "$answer" in
             *"waiting for the owner"*) log "$trigger: HMG-API가 화면에서 허용 여부를 묻는 중, 다시 시도" ;;
-            *"isn't in P"*)            log "$trigger: 기어가 P가 아니라고 함, 다시 시도" ;;
+            *"isn't in P"*)            log "$trigger: HMG-API가 기어가 P가 아니라고 함 (차량 값 gear.park=$(gear_park_reading)), 다시 시도" ;;
             *)                         log "$trigger: 응답을 받지 못함(${answer:-빈 응답}), 다시 시도" ;;
             esac
             last_answer=$answer
@@ -156,6 +169,9 @@ dismiss_with_retry() {  # dismiss_with_retry <계기> <최대 시도 횟수>: �
         [ $attempt -le $max_attempts ] && sleep $RETRY_SECONDS
     done
     log "$trigger: ${max_attempts}번 시도했지만 닫지 못함 (마지막 응답: ${answer:-빈 응답})"
+    case "$answer" in
+    *"isn't in P"*) log "$trigger: P단인데도 이렇게 나오면 HMG-API가 이 차의 P단 값을 읽지 못하는 것 (gear.park=$(gear_park_reading))" ;;
+    esac
     return 1
 }
 

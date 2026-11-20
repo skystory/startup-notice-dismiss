@@ -42,15 +42,15 @@ P단에서 몇 번 더 다시 닫기), 가능하면 HMG-API 1.1.0 이상으로 �
 
 ### HMG-API 앱으로 설치
 
-1. `startup-notice-dismiss-v1.1.0-hmgapi-usb.zip`을 FAT32 USB 메모리 최상위에 압축 해제합니다.
-   `HMGAPI/updates/startup-notice-dismiss-v1.1.0.zip`이 생기면 됩니다.
+1. `startup-notice-dismiss-v1.1.1-hmgapi-usb.zip`을 FAT32 USB 메모리 최상위에 압축 해제합니다.
+   `HMGAPI/updates/startup-notice-dismiss-v1.1.1.zip`이 생기면 됩니다.
 2. 차량에 꽂고 HMG-API 앱의 업데이트 화면에서 모드를 설치한 뒤 **Apply changes**를 누릅니다.
 
 USB 디버깅(ADB over USB)이 켜져 있으면 USB 메모리를 읽지 못하므로 꺼 두세요.
 
 ### NEMESIS로 설치
 
-`startup-notice-dismiss-v1.1.0-nemesis-usb.zip`을 FAT32/exFAT USB 메모리 최상위에 압축 해제하고,
+`startup-notice-dismiss-v1.1.1-nemesis-usb.zip`을 FAT32/exFAT USB 메모리 최상위에 압축 해제하고,
 Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
 
 ## 설정 (HMG-API 앱)
@@ -59,10 +59,12 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
 |---|---|
 | 시작 안내 자동으로 닫기 | 켬 |
 | 시동(READY)을 걸 때도 닫기 | 켬 |
-| 부팅 후 기다릴 시간 (초, 0~10) | 2 |
-| 깨어나거나 시동 건 뒤 기다릴 시간 (초, 0~10) | 1 |
+| 부팅 후 기다릴 시간 (초, 0~10) | 5 |
+| 깨어나거나 시동 건 뒤 기다릴 시간 (초, 0~10) | 2 |
 
-안내 화면이 늦게 떠서 닫히지 않으면 기다릴 시간을 늘려 주세요. 설정은 다음 부팅이나 깨어남부터 적용됩니다.
+안내 화면이 늦게 떠서 닫히지 않으면 기다릴 시간을 늘려 주세요. 닫기는 **안내 화면이 실제로 뜬 뒤에**
+보내야 합니다. 너무 일찍 보내면 HMG-API는 `ok`라고 답하지만 화면은 그 뒤에 뜨고, HMG-API 1.0.x는 한 시동에 한 번만
+보내기 때문에 다시 닫지 못합니다. 설정은 다음 부팅이나 깨어남부터 적용됩니다.
 
 ## 동작 방식
 
@@ -80,11 +82,12 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
   |---|---|
   | `ok ...` | 닫힘, 끝 |
   | `refused: once per start` | 이번 시동에서 이미 닫힘, 끝 |
+  | `refused: the car's service failed (...)` | HMG-API가 차량의 닫기 기능 호출에 실패. 이유를 로그에 남기고 끝 (1.0.x는 이번 시동에 다시 보낼 수 없음) |
   | `refused: the owner hasn't allowed it` | 앱의 허용 스위치가 꺼져 있음, 로그에 안내하고 끝 |
   | `refused: the owner didn't allow ...` | 차주가 거부함, 끝 |
   | `refused: unknown command ...` | HMG-API가 너무 오래됨, 끝 |
   | `refused: waiting for the owner ...` | 허용 질문이 떠 있음, 다시 시도 |
-  | `refused: the car isn't in P` | 부팅 직후 기어 값이 늦게 오는 경우라 다시 시도 |
+  | `refused: the car isn't in P` | 부팅 직후 기어 값이 늦게 오는 경우라 다시 시도. 차량의 `gear.park` 값을 로그에 함께 남김 |
   | `the vehicle service isn't running (yet)` | HMG-API 차량 서비스가 아직 시작 전. 시도 횟수를 쓰지 않고 최대 3분 기다림 |
   | 응답 없음 | 다시 시도 |
 
