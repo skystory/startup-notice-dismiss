@@ -9,6 +9,13 @@
       "description": "HMG-API 앱 설정의 'Startup notice'(Allow mods to dismiss it)도 켜져 있어야 동작합니다."
     },
     {
+      "key": "ready_trigger",
+      "type": "toggle",
+      "default": true,
+      "title": "시동(READY)을 걸 때도 닫기",
+      "description": "헤드유닛이 슬립하지 않은 채 다시 시동을 걸 때를 hv.ready 값으로 감지해 닫습니다. 3초마다 차량 상태를 읽으며, 차량이 hv.ready를 알려주지 않으면 이 기능만 동작하지 않습니다."
+    },
+    {
       "key": "boot_delay",
       "type": "number",
       "default": 2,
@@ -19,8 +26,8 @@
       "key": "wake_delay",
       "type": "number",
       "default": 1,
-      "title": "슬립에서 깨어난 뒤 기다릴 시간 (초)",
-      "description": "헤드유닛이 슬립(QuickBoot)에서 깨어난 뒤 이만큼 기다렸다가 닫습니다. 0~10초."
+      "title": "깨어나거나 시동 건 뒤 기다릴 시간 (초)",
+      "description": "헤드유닛이 슬립(QuickBoot)에서 깨어나거나 다시 시동(READY)된 뒤 이만큼 기다렸다가 닫습니다. 0~10초."
     }
   ]
 }

@@ -11,7 +11,10 @@
 #            → sys.boot_completed=1 을 기다린 뒤 boot_delay 초 후에 닫기
 #   - 깨어남: /proc/uptime 이 한 번에 WAKE_GAP_SECONDS 넘게 뜀(슬립 시간이 더해짐)
 #            → wake_delay 초 후에 닫기
+#   - 시동:  헤드유닛이 슬립하지 않은 채 다시 시동을 걸 때. hv.ready 가 0이었다가 1이 됨
+#            (READY_POLL_SECONDS마다 확인) → wake_delay 초 후에 닫기. 설정 ready_trigger로 끌 수 있음
 #   부팅한 지 오래된 뒤 서비스가 다시 시작되면(모드 설치·재시작) 부팅으로 보지 않습니다.
+#   같은 시동에 여러 번 보내도 HMG-API가 "once per start"로 한 번만 처리합니다.
 #
 # 사용법: notice.sh          모드 서비스로 실행
 #         notice.sh check    설정과 현재 상태만 출력, 명령은 보내지 않음
@@ -27,6 +30,7 @@ GETPROP=${GETPROP:-getprop}
 DEFAULT_ENABLED=true
 DEFAULT_BOOT_DELAY_SECONDS=2
 DEFAULT_WAKE_DELAY_SECONDS=1
+DEFAULT_READY_TRIGGER=true
 MAX_DELAY_SECONDS=10
 
 BOOT_WINDOW_SECONDS=180         # 서비스가 부팅 후 이 시간 안에 시작돼야 "부팅"으로 봄
@@ -35,11 +39,18 @@ WAKE_GAP_SECONDS=20             # 폴링 사이에 uptime이 이보다 많이 �
 POLL_SECONDS=1                  # 깨어남 감지 주기
 RETRY_SECONDS=1                 # 닫기 재시도 간격
 MAX_ATTEMPTS_BOOT=60            # 부팅 때 최대 시도 횟수 (약 1분)
-MAX_ATTEMPTS_WAKE=40            # 깨어날 때 최대 시도 횟수
+MAX_ATTEMPTS_WAKE=40            # 깨어날 때·시동 때 최대 시도 횟수
+READY_POLL_SECONDS=3            # hv.ready 확인 주기 (hmgapid 작업 슬롯을 잠깐 쓰므로 너무 자주 하지 않음)
+VEHICLE_SERVICE_WAIT_SECONDS=180  # HMG-API 차량 서비스가 늦게 뜰 때 시도 횟수와 따로 기다리는 최대 시간
 
 log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
 
-uptime_s() { local up rest; read up rest < "$UP"; echo "${up%.*}"; }
+uptime_s() {  # 부팅 후 지난 초(정수). 읽지 못하면 -1
+    local up rest
+    read up rest < "$UP" 2>/dev/null
+    up=${up%.*}
+    case "$up" in ''|*[!0-9]*) echo -1 ;; *) echo "$up" ;; esac
+}
 
 load_settings() {
     if [ -n "$HMGAPI_MOD" ]; then S=$(hmgapid setting-get); else S=$(hmgapid setting-get $MOD); fi
@@ -63,6 +74,8 @@ seconds_setting() {  # seconds_setting <키> <기본값>: 0~MAX_DELAY_SECONDS �
 }
 
 enabled() { [ "$(setting enabled $DEFAULT_ENABLED)" != false ]; }
+
+ready_trigger_enabled() { [ "$(setting ready_trigger $DEFAULT_READY_TRIGGER)" != false ]; }
 
 boot_completed() { [ "$($GETPROP sys.boot_completed 2>/dev/null)" = 1 ]; }
 
@@ -98,9 +111,21 @@ seen() {      # seen <이름>: SNAP에 있는 값, 없으면 -
 send_dismiss() { hmgapid vehicle-do startup_notice dismiss 2>&1; }
 
 dismiss_with_retry() {  # dismiss_with_retry <계기> <최대 시도 횟수>: 닫히거나 더 할 수 없을 때까지 재시도
-    local trigger=$1 max_attempts=$2 attempt=1 answer last_answer=
+    local trigger=$1 max_attempts=$2 attempt=1 service_waited=0 answer last_answer=
     while [ $attempt -le $max_attempts ]; do
         answer=$(send_dismiss)
+        case "$answer" in
+        *"isn't running"*)
+            # HMG-API 차량 서비스가 아직 시작 전: 시도 횟수를 쓰지 않고 시간 기준으로 기다림
+            if [ $service_waited -ge $VEHICLE_SERVICE_WAIT_SECONDS ]; then
+                log "$trigger: HMG-API 차량 서비스가 ${service_waited}초 동안 시작되지 않아 포기함"
+                return 1
+            fi
+            [ $service_waited = 0 ] && log "$trigger: HMG-API 차량 서비스가 아직 시작되지 않음, 기다리는 중"
+            service_waited=$(( service_waited + RETRY_SECONDS ))
+            sleep $RETRY_SECONDS
+            continue ;;
+        esac
         case "$answer" in
         ok*)
             log "$trigger: 시작 안내를 닫음 (${attempt}번째 시도)"
@@ -144,6 +169,29 @@ on_boot() {
     dismiss_with_retry "부팅" $MAX_ATTEMPTS_BOOT
 }
 
+on_ready() {  # 헤드유닛이 깨어 있는 채로 다시 시동(READY)됨
+    local wake_delay
+    load_settings
+    enabled || { log "시동(READY): 설정에서 꺼져 있어 동작 안 함"; return; }
+    ready_trigger_enabled || { log "시동(READY): '시동 걸 때도 닫기' 설정이 꺼져 있어 동작 안 함"; return; }
+    wake_delay=$(seconds_setting wake_delay $DEFAULT_WAKE_DELAY_SECONDS)
+    [ $wake_delay -gt 0 ] && sleep $wake_delay
+    dismiss_with_retry "시동(READY)" $MAX_ATTEMPTS_WAKE
+}
+
+check_ready() {  # hv.ready 를 읽어 0이면 다음 1을 새 시동으로 표시, 그 1이 오면 on_ready
+    local ready
+    snapshot hv.ready
+    ready=$(seen hv.ready)
+    case "$ready" in
+    0) ready_armed=1 ;;
+    1) if [ $ready_armed = 1 ]; then
+           ready_armed=0
+           on_ready
+       fi ;;
+    esac   # - (읽지 못함)이나 다른 값은 판단하지 않음
+}
+
 on_wake() {   # on_wake <잠든 시간(초)>
     local wake_delay
     load_settings
@@ -157,7 +205,7 @@ case "$1" in
 check)
     load_settings
     snapshot gear.park hv.ready
-    echo "설정: 자동 닫기 $(enabled && echo 켜짐 || echo 꺼짐), 부팅 후 $(seconds_setting boot_delay $DEFAULT_BOOT_DELAY_SECONDS)초, 깨어난 뒤 $(seconds_setting wake_delay $DEFAULT_WAKE_DELAY_SECONDS)초"
+    echo "설정: 자동 닫기 $(enabled && echo 켜짐 || echo 꺼짐), 시동 걸 때도 닫기 $(ready_trigger_enabled && echo 켜짐 || echo 꺼짐), 부팅 후 $(seconds_setting boot_delay $DEFAULT_BOOT_DELAY_SECONDS)초, 깨어난 뒤 $(seconds_setting wake_delay $DEFAULT_WAKE_DELAY_SECONDS)초"
     echo "상태: uptime $(uptime_s)초, sys.boot_completed $($GETPROP sys.boot_completed 2>/dev/null), 기어 P $(seen gear.park), hv.ready $(seen hv.ready)"
     exit 0 ;;
 dismiss)
@@ -166,21 +214,36 @@ dismiss)
 esac
 
 service_start_uptime=$(uptime_s)
-log "서비스 시작 (부팅 후 ${service_start_uptime}초)"
-if [ $service_start_uptime -lt $BOOT_WINDOW_SECONDS ]; then
+if [ $service_start_uptime -lt 0 ]; then
+    log "서비스 시작: $UP 을 읽지 못해 부팅 직후인지 알 수 없음, 이번에는 닫지 않음"
+elif [ $service_start_uptime -lt $BOOT_WINDOW_SECONDS ]; then
+    log "서비스 시작 (부팅 후 ${service_start_uptime}초)"
     on_boot
 else
+    log "서비스 시작 (부팅 후 ${service_start_uptime}초)"
     log "부팅한 지 ${BOOT_WINDOW_SECONDS}초가 지나 시작됨: 모드 설치나 서비스 재시작으로 보고 이번에는 닫지 않음"
 fi
 
+ready_armed=0                      # 시동이 꺼진 값(0)을 한 번 읽으면 1: 다음 READY를 새 시동으로 봄
 last=$(uptime_s)
+ready_checked_at=$last
 while :; do
     sleep $POLL_SECONDS
     now=$(uptime_s)
+    if [ $now -lt 0 ] || [ $last -lt 0 ]; then
+        last=$now; ready_checked_at=$now   # uptime을 읽지 못한 동안은 판단하지 않음
+        continue
+    fi
     slept_seconds=$(( now - last ))
     if [ $slept_seconds -gt $WAKE_GAP_SECONDS ]; then
         on_wake $slept_seconds
+        ready_armed=0              # 이번 시동의 안내는 처리함
         now=$(uptime_s)            # 닫기에 걸린 시간을 다음 슬립으로 착각하지 않도록
+        ready_checked_at=$now
+    elif [ $(( now - ready_checked_at )) -ge $READY_POLL_SECONDS ]; then
+        ready_checked_at=$now
+        check_ready
+        now=$(uptime_s)
     fi
     last=$now
 done

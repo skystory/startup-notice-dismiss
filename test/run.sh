@@ -149,11 +149,45 @@ result "늦게 시작된 뒤에도 깨어날 때마다 닫음" $([ "$(sent_count
 run '{}' 30 900 'echo "$NOT_PARK" > $T/default_answer' 'echo "150 jump 600" > $T/events'
 result "깨어남: P가 아니면 40번에서 멈춤" $([ "$(sent_count)" = 100 ] && echo 0 || echo 1) "부팅 60 + 깨어남 40 = 100회 (got $(sent_count))"
 
+# --- 슬립 없이 다시 시동 (hv.ready 0 → 1)
+run '{}' 30 200 'printf "%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "130 echo 1 > $T/r/hv.ready" > $T/events'
+result "시동(READY): 슬립 없이 다시 시동하면 닫음" $([ "$(sent_count)" = 2 ] && logged "시동(READY): 시작 안내를 닫음" && echo 0 || echo 1) "부팅 1 + 시동 1 = 2회"
+result "시동(READY): 3초 확인 + 1초 대기 안에 보냄" $([ "$(nth_sent_uptime 2)" -ge 131 ] && [ "$(nth_sent_uptime 2)" -le 135 ] && echo 0 || echo 1) "131~135에 전송 (got $(nth_sent_uptime 2))"
+
+run '{}' 30 200
+result "시동(READY): 계속 READY면 부팅 때만" $([ "$(sent_count)" = 1 ] && echo 0 || echo 1) "1회"
+
+run '{}' 30 200 'rm $T/r/hv.ready' 'echo "130 echo 1 > $T/r/hv.ready" > $T/events'
+result "시동(READY): hv.ready를 모르면(-) 판단 안 함" $([ "$(sent_count)" = 1 ] && echo 0 || echo 1) "1회"
+
+run '{"ready_trigger":false}' 30 200 'printf "%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "130 echo 1 > $T/r/hv.ready" > $T/events'
+result "시동(READY): 설정에서 끄면 안 보냄" $([ "$(sent_count)" = 1 ] && logged "설정이 꺼져 있어" && echo 0 || echo 1) "1회"
+
+run '{}' 30 200 'echo 0 > $T/r/hv.ready' 'echo "$ONCE" > $T/default_answer' 'echo "$OK_ANSWER" > $T/answers' 'echo "100 echo 1 > $T/r/hv.ready" > $T/events'
+result "시동(READY): ACC로 부팅 뒤 READY는 once per start로 끝" $([ "$(sent_count)" = 2 ] && logged "이미 닫았다고" && echo 0 || echo 1) "2회"
+
+run '{}' 30 300 'printf "%s\n%s\n%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "130 echo 1 > $T/r/hv.ready" "160 echo 0 > $T/r/hv.ready" "190 echo 1 > $T/r/hv.ready" > $T/events'
+result "시동(READY): 시동마다 한 번씩" $([ "$(sent_count)" = 3 ] && echo 0 || echo 1) "부팅 1 + 시동 2 = 3회"
+
+run '{}' 30 900 'printf "%s\n%s\n" "100 echo 0 > $T/r/hv.ready" "120 jump 600" > $T/events' 'echo "125 echo 1 > $T/r/hv.ready" >> $T/events'
+result "깨어남과 READY가 겹치면 깨어남으로 한 번만" $([ "$(sent_count)" = 2 ] && echo 0 || echo 1) "부팅 1 + 깨어남 1 = 2회 (got $(sent_count))"
+
+# --- HMG-API 차량 서비스가 늦게 뜸
+run '{}' 30 300 'for i in $(seq 70); do echo "the vehicle service isn'"'"'t running (yet)"; done > $T/answers'
+result "차량 서비스가 70초 늦게 떠도 닫음 (시도 횟수와 별도)" $([ "$(sent_count)" = 71 ] && logged "시작 안내를 닫음" && [ "$(grep -c "아직 시작되지 않음" $T/log)" = 1 ] && echo 0 || echo 1) "71회 (got $(sent_count))"
+
+run '{}' 30 400 'echo "the vehicle service isn'"'"'t running (yet)" > $T/default_answer'
+result "차량 서비스가 끝내 안 뜨면 3분 뒤 포기" $([ "$(sent_count)" = 181 ] && logged "180초 동안 시작되지 않아" && echo 0 || echo 1) "181회 (got $(sent_count))"
+
+# --- uptime을 읽지 못함
+run '{}' 30 60 ': > $UP'
+result "uptime을 못 읽으면 부팅 닫기 안 함, 멈추지 않음" $([ "$(sent_count)" = 0 ] && logged "읽지 못해" && ! grep -qi "syntax\|error\|오류" $T/log && echo 0 || echo 1) "전송 없음, 오류 없음"
+
 # --- check / dismiss 명령
 run '{"boot_delay":3}' 30 31
 out=$($TEST_SHELL "$HERE/mod/notice.sh" check 2>&1)
 echo "$out" > "$T/log"
-result "check: 설정·상태 출력, 전송 없음" $(echo "$out" | grep -q "부팅 후 3초" && echo "$out" | grep -q "기어 P 1" && [ ! -s "$T/sent" ] && echo 0 || echo 1) "출력 확인"
+result "check: 설정·상태 출력, 전송 없음" $(echo "$out" | grep -q "부팅 후 3초" && echo "$out" | grep -q "시동 걸 때도 닫기 켜짐" && echo "$out" | grep -q "기어 P 1" && [ ! -s "$T/sent" ] && echo 0 || echo 1) "출력 확인"
 
 rm -f "$T/sent"; echo "$NOT_ALLOWED" > "$T/default_answer"
 out=$($TEST_SHELL "$HERE/mod/notice.sh" dismiss 2>&1)

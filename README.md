@@ -1,7 +1,7 @@
 # 시작 안내 자동 닫기 (Startup Notice Dismiss, HMG-API 모드)
 
-헤드유닛이 부팅되거나 슬립(QuickBoot)에서 깨어날 때 나오는 **시작 안내(동의) 화면**을
-자동으로 닫는 HMG-API 모드입니다.
+헤드유닛이 부팅되거나 슬립(QuickBoot)에서 깨어날 때, 또는 헤드유닛이 켜진 채로 다시 시동(READY)을
+걸 때 나오는 **시작 안내(동의) 화면**을 자동으로 닫는 HMG-API 모드입니다.
 
 실제로 화면을 닫는 일은 HMG-API의 `startup_notice` 명령이 합니다(내부적으로
 `IMicomFactoryService.hideConsentScreen()`, 즉 `com.hkmc.factory` 82번 호출). 이 모드는
@@ -42,15 +42,15 @@ P단에서 몇 번 더 다시 닫기), 가능하면 HMG-API 1.1.0 이상으로 �
 
 ### HMG-API 앱으로 설치
 
-1. `startup-notice-dismiss-v1.0.0-hmgapi-usb.zip`을 FAT32 USB 메모리 최상위에 압축 해제합니다.
-   `HMGAPI/updates/startup-notice-dismiss-v1.0.0.zip`이 생기면 됩니다.
+1. `startup-notice-dismiss-v1.1.0-hmgapi-usb.zip`을 FAT32 USB 메모리 최상위에 압축 해제합니다.
+   `HMGAPI/updates/startup-notice-dismiss-v1.1.0.zip`이 생기면 됩니다.
 2. 차량에 꽂고 HMG-API 앱의 업데이트 화면에서 모드를 설치한 뒤 **Apply changes**를 누릅니다.
 
 USB 디버깅(ADB over USB)이 켜져 있으면 USB 메모리를 읽지 못하므로 꺼 두세요.
 
 ### NEMESIS로 설치
 
-`startup-notice-dismiss-v1.0.0-nemesis-usb.zip`을 FAT32/exFAT USB 메모리 최상위에 압축 해제하고,
+`startup-notice-dismiss-v1.1.0-nemesis-usb.zip`을 FAT32/exFAT USB 메모리 최상위에 압축 해제하고,
 Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
 
 ## 설정 (HMG-API 앱)
@@ -58,8 +58,9 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
 | 설정 | 기본값 |
 |---|---|
 | 시작 안내 자동으로 닫기 | 켬 |
+| 시동(READY)을 걸 때도 닫기 | 켬 |
 | 부팅 후 기다릴 시간 (초, 0~10) | 2 |
-| 슬립에서 깨어난 뒤 기다릴 시간 (초, 0~10) | 1 |
+| 깨어나거나 시동 건 뒤 기다릴 시간 (초, 0~10) | 1 |
 
 안내 화면이 늦게 떠서 닫히지 않으면 기다릴 시간을 늘려 주세요. 설정은 다음 부팅이나 깨어남부터 적용됩니다.
 
@@ -69,7 +70,11 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
   기다린 뒤(최대 2분, 끝내 안 오면 그대로 진행) 설정한 시간만큼 더 기다렸다가 닫습니다.
 - **깨어남:** 1초마다 `/proc/uptime`을 확인합니다. 한 번에 20초 넘게 뛰면 슬립에서 깨어난
   것으로 보고, 설정한 시간만큼 기다렸다가 닫습니다.
-- **재시도:** 1초 간격으로 부팅 때 최대 60번, 깨어날 때 최대 40번 보냅니다. HMG-API 응답에 따라 이렇게 처리합니다.
+- **시동(READY):** 헤드유닛이 슬립하지 않은 채 시동을 껐다 다시 켜면 uptime이 뛰지 않습니다.
+  그래서 3초마다 `hv.ready`를 읽어, 0(꺼짐)을 본 뒤 1(READY)이 되면 새 시동으로 보고 닫습니다.
+  차량이 `hv.ready`를 알려주지 않으면(`-`) 이 감지만 건너뜁니다. 설정에서 끌 수 있습니다.
+  같은 시동에 부팅·깨어남과 겹쳐 보내도 HMG-API가 `once per start`로 한 번만 처리합니다.
+- **재시도:** 1초 간격으로 부팅 때 최대 60번, 깨어나거나 시동 걸 때 최대 40번 보냅니다. HMG-API 응답에 따라 이렇게 처리합니다.
 
   | 응답 | 처리 |
   |---|---|
@@ -80,9 +85,11 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
   | `refused: unknown command ...` | HMG-API가 너무 오래됨, 끝 |
   | `refused: waiting for the owner ...` | 허용 질문이 떠 있음, 다시 시도 |
   | `refused: the car isn't in P` | 부팅 직후 기어 값이 늦게 오는 경우라 다시 시도 |
+  | `the vehicle service isn't running (yet)` | HMG-API 차량 서비스가 아직 시작 전. 시도 횟수를 쓰지 않고 최대 3분 기다림 |
   | 응답 없음 | 다시 시도 |
 
 - 부팅한 지 3분이 지나 서비스가 시작되면(모드 설치, 서비스 재시작) 이미 운전 중일 수 있으므로 닫지 않습니다.
+  `/proc/uptime`을 읽지 못하는 경우에도 판단을 미루고 닫지 않습니다.
 - Android 4.4 헤드유닛의 `sleep`은 정수 초만 받기 때문에 소수 초를 쓰지 않습니다.
 
 ## 확인과 시험 (차량에서)
@@ -90,7 +97,7 @@ Android가 다 켜진 뒤 꽂아서 설치를 확인합니다.
 로그는 `/data/hmgapi/logs/startup-notice-dismiss/notice.log`에 남습니다.
 
 ```sh
-sh notice.sh check     # 설정과 현재 상태(uptime, boot_completed, 기어 P, hv.ready)만 출력
+sh notice.sh check     # 설정과 현재 상태(uptime, boot_completed, 기어 P, hv.ready)만 출력. hv.ready가 0/1로 나오는지 확인
 sh notice.sh dismiss   # 지금 한 번 닫기를 보내고 HMG-API 응답을 출력 (P단에서 시험)
 ```
 
@@ -115,7 +122,7 @@ TEST_SHELL=mksh test/run.sh  # 헤드유닛과 같은 mksh
 ```
 
 가짜 `hmgapid`, `getprop`, `sleep`(실제로 기다리지 않고 가짜 uptime을 올림)으로 부팅, 깨어남,
-HMG-API 응답별 처리, `check`/`dismiss` 명령을 시험합니다.
+시동(READY) 감지, HMG-API 응답별 처리, 차량 서비스 대기, uptime 읽기 실패, `check`/`dismiss` 명령을 시험합니다.
 
 ## 라이선스
 
