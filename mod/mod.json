@@ -1,0 +1,17 @@
+{
+  "id": "startup-notice-dismiss",
+  "name": "시작 안내 자동 닫기 (Startup Notice Dismiss)",
+  "version": "1.0.0",
+  "hmgapi": ">=1.0.0",
+  "authors": ["Skystory"],
+  "license": "AGPL-3.0",
+  "description": "헤드유닛이 부팅되거나 슬립에서 깨어날 때 나오는 시작 안내(동의) 화면을 HMG-API의 startup_notice 명령으로 닫습니다. HMG-API 앱에서 'Startup notice' 허용을 켜야 하며, 기어가 P일 때만, 시동당 한 번만 동작합니다.",
+  "live": true,
+  "services": [
+    { "name": "notice", "script": "notice.sh", "user": "system", "restart": true, "start": "android" }
+  ],
+  "vehicle": {
+    "read": ["gear.park", "hv.ready"],
+    "commands": ["startup_notice"]
+  }
+}

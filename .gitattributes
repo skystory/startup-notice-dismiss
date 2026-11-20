@@ -1,0 +1,5 @@
+# 차량(mksh)과 빌드에서 CRLF가 섞이지 않도록, Windows에서도 LF로 유지
+*.sh   text eol=lf
+*.py   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf

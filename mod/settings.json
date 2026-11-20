@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "settings": [
+    {
+      "key": "enabled",
+      "type": "toggle",
+      "default": true,
+      "title": "시작 안내 자동으로 닫기",
+      "description": "HMG-API 앱 설정의 'Startup notice'(Allow mods to dismiss it)도 켜져 있어야 동작합니다."
+    },
+    {
+      "key": "boot_delay",
+      "type": "number",
+      "default": 2,
+      "title": "부팅 후 기다릴 시간 (초)",
+      "description": "Android 부팅이 끝난 뒤 이만큼 기다렸다가 닫습니다. 0~10초. 안내 화면이 늦게 떠서 닫히지 않으면 늘려 주세요."
+    },
+    {
+      "key": "wake_delay",
+      "type": "number",
+      "default": 1,
+      "title": "슬립에서 깨어난 뒤 기다릴 시간 (초)",
+      "description": "헤드유닛이 슬립(QuickBoot)에서 깨어난 뒤 이만큼 기다렸다가 닫습니다. 0~10초."
+    }
+  ]
+}
